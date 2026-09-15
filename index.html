@@ -22,6 +22,7 @@
         <button class="nav-btn" id="nav-analysis" onclick="navigateTo('analysis')">Item Analysis</button>
         <button class="nav-btn" id="nav-ideas" onclick="navigateTo('ideas')">Reuse Ideas</button>
         <button class="nav-btn" id="nav-steps" onclick="navigateTo('steps')">Step-by-Step</button>
+        <button class="nav-btn" id="nav-favorites" onclick="navigateTo('favorites')">❤️ Favorites</button>
       </nav>
     </div>
   </header>
@@ -62,6 +63,22 @@
           <div class="feature-icon">🛠️</div>
           <h3>Step-by-Step Guides</h3>
           <p>Follow simple, checkable instructions with difficulty levels and time estimates.</p>
+        </div>
+      </div>
+
+      <!-- Eco Impact Tracker Bar -->
+      <div class="impact-tracker">
+        <div>
+          <div class="impact-num" id="stat-completed">0</div>
+          <div class="impact-label">Projects Completed 🛠️</div>
+        </div>
+        <div>
+          <div class="impact-num" id="stat-waste">0 kg</div>
+          <div class="impact-label">Waste Diverted ♻️</div>
+        </div>
+        <div>
+          <div class="impact-num" id="stat-co2">0 kg</div>
+          <div class="impact-label">CO₂ Offset 🌍</div>
         </div>
       </div>
     </section>
@@ -116,7 +133,7 @@
     <!-- SECTION 3: ITEM ANALYSIS -->
     <section id="analysis-section" class="section">
       <h2 class="section-title">Item Analysis</h2>
-      <p class="section-subtitle">We identified your uploaded item and material properties</p>
+      <p class="section-subtitle">We identified your uploaded item, tools available, and eco impact rating</p>
 
       <div class="analysis-card">
         <div class="analysis-header">
@@ -132,6 +149,7 @@
             <div class="detail-row"><span class="detail-label">Material:</span> <span class="detail-value" id="analysis-material">Plastic (PET #1)</span></div>
             <div class="detail-row"><span class="detail-label">Condition:</span> <span class="detail-value" id="analysis-condition">Good / Clean</span></div>
 
+            <!-- 🎯 Goal Section -->
             <div class="goal-section">
               <div class="goal-title">What would you like to do?</div>
               <div class="goal-options">
@@ -141,6 +159,49 @@
                 <label class="goal-option"><input type="radio" name="goal" value="donate" onchange="state.goal=this.value"> <span>○ Donate it</span></label>
                 <label class="goal-option"><input type="radio" name="goal" value="recycle" onchange="state.goal=this.value"> <span>○ Recycle it</span></label>
               </div>
+            </div>
+
+            <!-- 🧰 Available Tools Picker -->
+            <div class="goal-section">
+              <div class="goal-title">🧰 Tools & Materials you already have:</div>
+              <div class="tools-grid">
+                <label class="tool-pill"><input type="checkbox" value="Scissors" checked onchange="toggleUserTool(this.value, this.checked)"> <span>✂️ Scissors</span></label>
+                <label class="tool-pill"><input type="checkbox" value="Knife" onchange="toggleUserTool(this.value, this.checked)"> <span>🔪 Cutter/Knife</span></label>
+                <label class="tool-pill"><input type="checkbox" value="Tape" checked onchange="toggleUserTool(this.value, this.checked)"> <span>🩹 Tape / Glue</span></label>
+                <label class="tool-pill"><input type="checkbox" value="Paint" onchange="toggleUserTool(this.value, this.checked)"> <span>🎨 Paint</span></label>
+                <label class="tool-pill"><input type="checkbox" value="String" checked onchange="toggleUserTool(this.value, this.checked)"> <span>🧶 String / Yarn</span></label>
+                <label class="tool-pill"><input type="checkbox" value="Soil" onchange="toggleUserTool(this.value, this.checked)"> <span>🌱 Soil</span></label>
+              </div>
+            </div>
+
+            <!-- ⚙️ Filters Row -->
+            <div class="filter-row">
+              <div class="filter-group">
+                <label>⭐ Difficulty</label>
+                <select class="filter-select" onchange="state.filterDiff=this.value">
+                  <option value="all">Any Difficulty</option>
+                  <option value="⭐">Beginner ⭐</option>
+                  <option value="⭐⭐">Intermediate ⭐⭐</option>
+                  <option value="⭐⭐⭐">Advanced ⭐⭐⭐</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label>⏱️ Max Time</label>
+                <select class="filter-select" onchange="state.filterTime=this.value">
+                  <option value="all">Any Time</option>
+                  <option value="15">Under 15 min</option>
+                  <option value="30">Under 30 min</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- ♻️ Sustainability Score Banner -->
+            <div class="sustainability-box">
+              <div>
+                <div style="font-weight: 700; color: var(--primary);">♻️ Sustainability Matrix Recommendation</div>
+                <div style="font-size: 0.85rem; color: var(--text-muted);" id="sustainability-recommendation">Recommendation: Direct Upcycle / Reuse (Saves 95% Waste)</div>
+              </div>
+              <span class="eco-score-badge" id="sustainability-score">Score: 95%</span>
             </div>
           </div>
         </div>
@@ -161,7 +222,7 @@
         </div>
         <div class="ideas-item-info">
           <span class="badge-verified" id="ideas-item-badge">♻️ Plastic Bottle</span>
-          <button class="btn btn-secondary" onclick="navigateTo('analysis')">Change Goal</button>
+          <button class="btn btn-secondary" onclick="navigateTo('analysis')">Change Goal & Filters</button>
         </div>
       </div>
 
@@ -194,7 +255,15 @@
       </div>
     </section>
 
+    <!-- SECTION 6: SAVED FAVORITES PAGE -->
+    <section id="favorites-section" class="section">
+      <h2 class="section-title">Saved Favorites ❤️</h2>
+      <p class="section-subtitle">Your bookmarked upcycling projects for easy access</p>
+      <div class="ideas-grid" id="favorites-container"></div>
+    </section>
+
   </main>
+
 
   <!-- ponytail: native <dialog> tag instead of manual overlay divs -->
   <dialog class="modal" id="celebration-modal">
@@ -210,6 +279,9 @@
     <p>What Can I Reuse? ♻️ — Empowering Zero-Waste Living</p>
   </footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
+

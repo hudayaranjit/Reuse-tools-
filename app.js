@@ -252,7 +252,12 @@ let state = {
   itemKey: 'bottle',
   item: presets.bottle,
   goal: 'useful',
-  idea: null
+  userTools: ['Scissors', 'Tape', 'String'],
+  filterDiff: 'all',
+  filterTime: 'all',
+  idea: null,
+  favorites: JSON.parse(localStorage.getItem('reuse_favorites') || '[]'),
+  completedCount: parseInt(localStorage.getItem('reuse_completed_count') || '0', 10)
 };
 
 // Routing Engine
@@ -262,6 +267,13 @@ function navigateTo(id) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (id === 'ideas') renderIdeas();
   if (id === 'steps') renderSteps();
+  if (id === 'favorites') renderFavorites();
+  updateEcoStats();
+}
+
+function toggleUserTool(tool, isChecked) {
+  if (isChecked && !state.userTools.includes(tool)) state.userTools.push(tool);
+  if (!isChecked) state.userTools = state.userTools.filter(t => t !== tool);
 }
 
 function selectPresetItem(key) {
@@ -276,6 +288,84 @@ function updateAnalysisView() {
   document.getElementById('analysis-object').textContent = state.item.name;
   document.getElementById('analysis-material').textContent = state.item.material;
   document.getElementById('analysis-condition').textContent = state.item.condition;
+
+  // Sustainability matrix calculation
+  let score = 95;
+  let rec = "Direct Upcycle / Reuse (Saves 95% Waste & Carbon)";
+  if (state.goal === 'repair') { score = 90; rec = "Repair & Extend Lifetime (Saves 90% Energy)"; }
+  if (state.goal === 'donate') { score = 85; rec = "Community Donation Drive (Saves 85% Material Waste)"; }
+  if (state.goal === 'recycle') { score = 75; rec = "Municipal Sorting & Processing Bin (Saves 75% Landfill)"; }
+
+  document.getElementById('sustainability-score').textContent = `Score: ${score}%`;
+  document.getElementById('sustainability-recommendation').textContent = `Recommendation: ${rec}`;
+}
+
+// AI Smart Match Scoring Engine
+function calculateMatchScore(project) {
+  let match = 70; // Base score
+  
+  // Tool availability bonus
+  const matsStr = (project.mats || []).join(' ').toLowerCase();
+  state.userTools.forEach(t => {
+    if (matsStr.includes(t.toLowerCase())) match += 10;
+  });
+
+  // Difficulty match
+  if (state.filterDiff !== 'all' && project.diff === state.filterDiff) match += 15;
+  
+  return Math.min(match, 98);
+}
+
+// Favorites Manager
+function toggleFavorite(id, event) {
+  if (event) event.stopPropagation();
+  const currentDb = db[state.itemKey] || db.bottle;
+  let allProjects = [];
+  Object.keys(currentDb).forEach(g => { if (Array.isArray(currentDb[g])) allProjects.push(...currentDb[g]); });
+  
+  const target = allProjects.find(p => p.id === id) || (state.idea?.id === id ? state.idea : null);
+  if (!target) return;
+
+  const exists = state.favorites.some(f => f.id === id);
+  if (exists) {
+    state.favorites = state.favorites.filter(f => f.id !== id);
+  } else {
+    state.favorites.push(target);
+    if (typeof saveFavoriteToCloud === 'function') saveFavoriteToCloud(target);
+  }
+
+  localStorage.setItem('reuse_favorites', JSON.stringify(state.favorites));
+  if (document.getElementById('ideas-section').classList.contains('active')) renderIdeas();
+  if (document.getElementById('favorites-section').classList.contains('active')) renderFavorites();
+}
+
+function renderFavorites() {
+  const container = document.getElementById('favorites-container');
+  if (!container) return;
+
+  if (state.favorites.length === 0) {
+    container.innerHTML = `
+      <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--text-muted);">
+        <div style="font-size: 3rem; margin-bottom: 0.5rem;">❤️</div>
+        <h3>No saved favorites yet!</h3>
+        <p>Click the ❤️ icon on any project idea card to bookmark it here.</p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = state.favorites.map(p => `
+    <div class="idea-card">
+      <img src="${p.img}" alt="${p.title}" class="idea-img">
+      <div class="idea-content">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+          <h3 class="idea-title">${p.icon} ${p.title}</h3>
+          <button class="btn-fav" onclick="toggleFavorite('${p.id}', event)" title="Remove Favorite">❤️</button>
+        </div>
+        <div class="idea-meta"><span>Difficulty: ${p.diff}</span> • <span>⏱️ ${p.time}</span></div>
+        <div class="idea-materials"><strong>Required:</strong> ${p.extra || 'Basic tools'}</div>
+        <button class="btn btn-primary" style="width:100%" onclick="selectIdea('${p.id}')">View Instructions 🛠️</button>
+      </div>
+    </div>`).join('');
 }
 
 // Custom Upload & Smart Recognition Engine
@@ -310,6 +400,8 @@ function handleFileUpload(e) {
       };
       db.custom = generateCustomDatabase(state.item.name, ev.target.result);
     }
+
+    if (typeof logScanToCloud === 'function') logScanToCloud(state.item.name, state.item.material);
 
     updateAnalysisView();
     navigateTo('analysis');
@@ -378,26 +470,52 @@ function renderIdeas() {
   document.getElementById('ideas-item-badge').textContent = `♻️ ${state.item.name}`;
   
   const currentDb = db[state.itemKey] || db.bottle;
-  const list = currentDb[state.goal] || currentDb.useful || db.bottle.useful;
+  let list = currentDb[state.goal] || currentDb.useful || db.bottle.useful;
 
-  document.getElementById('ideas-count-subtitle').textContent = `We found ${list.length} option(s) for goal: "${state.goal.toUpperCase()}".`;
+  // Apply filters
+  if (state.filterDiff !== 'all') list = list.filter(p => p.diff === state.filterDiff);
+  if (state.filterTime === '15') list = list.filter(p => parseInt(p.time) <= 15);
+  if (state.filterTime === '30') list = list.filter(p => parseInt(p.time) <= 30);
+
+  document.getElementById('ideas-count-subtitle').textContent = `We found ${list.length} option(s) matching your filters.`;
   
-  document.getElementById('ideas-container').innerHTML = list.map(p => `
+  if (list.length === 0) {
+    document.getElementById('ideas-container').innerHTML = `
+      <div style="grid-column:1/-1; text-align:center; padding:3rem; color:var(--text-muted);">
+        <h3>No projects match your current filters</h3>
+        <p>Try switching difficulty or time filter to "Any" in Item Analysis.</p>
+      </div>`;
+    return;
+  }
+
+  document.getElementById('ideas-container').innerHTML = list.map(p => {
+    const isFav = state.favorites.some(f => f.id === p.id);
+    const matchScore = calculateMatchScore(p);
+
+    return `
     <div class="idea-card">
       <img src="${p.img}" alt="${p.title}" class="idea-img">
       <div class="idea-content">
-        <h3 class="idea-title">${p.icon} ${p.title}</h3>
-        <div class="idea-meta"><span>Difficulty: ${p.diff}</span> • <span>⏱️ ${p.time}</span></div>
-        <div class="idea-materials"><strong>Materials required:</strong> ${p.extra}</div>
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+          <h3 class="idea-title">${p.icon} ${p.title}</h3>
+          <button class="btn-fav" onclick="toggleFavorite('${p.id}', event)" title="Favorite">${isFav ? '❤️' : '🤍'}</button>
+        </div>
+        <div class="idea-meta">
+          <span class="match-badge">🎯 ${matchScore}% Match</span>
+          <span>Diff: ${p.diff}</span> • <span>⏱️ ${p.time}</span>
+        </div>
+        <div class="idea-materials"><strong>Required:</strong> ${p.extra}</div>
         <button class="btn btn-primary" style="width:100%" onclick="selectIdea('${p.id}')">View Instructions 🛠️</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function selectIdea(id) {
   const currentDb = db[state.itemKey] || db.bottle;
-  const list = currentDb[state.goal] || currentDb.useful || db.bottle.useful;
-  state.idea = list.find(p => p.id === id) || list[0];
+  let all = [];
+  Object.keys(currentDb).forEach(g => { if (Array.isArray(currentDb[g])) all.push(...currentDb[g]); });
+  state.idea = all.find(p => p.id === id) || (state.favorites.find(f => f.id === id)) || currentDb.useful[0];
   navigateTo('steps');
 }
 
@@ -430,13 +548,31 @@ function checkMaterialProgress() {
   console.log(`Materials progress: ${checkedCount}/${checkboxes.length}`);
 }
 
+function updateEcoStats() {
+  const elComp = document.getElementById('stat-completed');
+  const elWaste = document.getElementById('stat-waste');
+  const elCo2 = document.getElementById('stat-co2');
+
+  if (elComp) elComp.textContent = state.completedCount;
+  if (elWaste) elWaste.textContent = `${(state.completedCount * 0.25).toFixed(1)} kg`;
+  if (elCo2) elCo2.textContent = `${(state.completedCount * 0.4).toFixed(1)} kg`;
+}
+
 // Native <dialog> Modal Helpers
 const getModal = () => document.getElementById('celebration-modal');
-const showCelebration = () => getModal().showModal();
+const showCelebration = () => {
+  state.completedCount += 1;
+  localStorage.setItem('reuse_completed_count', state.completedCount.toString());
+  updateEcoStats();
+  if (typeof logCompletionToCloud === 'function' && state.idea) logCompletionToCloud(state.idea);
+  getModal().showModal();
+};
+
 const closeCelebration = () => {
   getModal().close();
   navigateTo('home');
 };
+
 
 // Drag and Drop Binding for Dropzone
 document.addEventListener('DOMContentLoaded', () => {
@@ -461,5 +597,50 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
+
+  // Initialize Supabase Connection
+  if (typeof initSupabase === 'function') {
+    initSupabase();
+  }
 });
+
+
+// Supabase Database Integration Layer
+async function saveFavoriteToCloud(item) {
+  if (!supabaseClient) return;
+  try {
+    const { data, error } = await supabaseClient
+      .from('favorites')
+      .upsert([{ id: item.id, title: item.title, icon: item.icon, created_at: new Date() }]);
+    if (error) console.warn('Supabase favorite sync error:', error.message);
+    else console.log('☁️ Favorite synced to Supabase cloud!');
+  } catch (err) {
+    console.warn('Supabase connection offline/bypassed:', err);
+  }
+}
+
+async function logScanToCloud(itemName, material) {
+  if (!supabaseClient) return;
+  try {
+    await supabaseClient
+      .from('scans')
+      .insert([{ item_name: itemName, material: material, scanned_at: new Date() }]);
+    console.log('☁️ Item scan logged to Supabase!');
+  } catch (err) {
+    console.warn('Supabase scan log bypassed:', err);
+  }
+}
+
+async function logCompletionToCloud(project) {
+  if (!supabaseClient) return;
+  try {
+    await supabaseClient
+      .from('completions')
+      .insert([{ project_id: project.id || 'project', project_title: project.title, completed_at: new Date() }]);
+    console.log('☁️ Project completion synced to Supabase!');
+  } catch (err) {
+    console.warn('Supabase completion log bypassed:', err);
+  }
+}
+
 
